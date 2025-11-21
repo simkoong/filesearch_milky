@@ -29,7 +29,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!res.ok) {
         answerEl.textContent = data.error || "오류가 발생했습니다.";
       } else {
-        answerEl.textContent = data.answer || "(빈 응답)";
+        // Markdown 렌더링
+        answerEl.innerHTML = marked.parse(data.answer || "(빈 응답)");
       }
     } catch (err) {
       console.error(err);

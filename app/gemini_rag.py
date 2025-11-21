@@ -44,5 +44,31 @@ def ask_milky_rag(question: str) -> str:
 
     # 기본 텍스트만 추출
     answer = resp.text or ""
+    
+    # 실제 참고한 문서 추출 (grounding_metadata 사용)
+    referenced_docs = set()  # 중복 제거를 위해 set 사용
+    
+    if hasattr(resp, "candidates") and resp.candidates:
+        for cand in resp.candidates:
+            # grounding_metadata에서 실제 참고 문서 추출
+            if hasattr(cand, "grounding_metadata") and cand.grounding_metadata:
+                gm = cand.grounding_metadata
+                if hasattr(gm, "grounding_chunks") and gm.grounding_chunks:
+                    for chunk in gm.grounding_chunks:
+                        # retrieved_context에 document_name이 있으면 추출
+                        if hasattr(chunk, "retrieved_context") and chunk.retrieved_context:
+                            rc = chunk.retrieved_context
+                            # document_name 또는 title 사용
+                            doc_name = getattr(rc, "title", None) or getattr(rc, "document_name", None)
+                            if doc_name:
+                                referenced_docs.add(doc_name)
+    
+    # 참고 문서가 있으면 마크다운 블록 추가
+    if referenced_docs:
+        citation_md = "\n\n**📚 참고 문서**\n"
+        for doc_name in sorted(referenced_docs):  # 정렬해서 표시
+            citation_md += f"- {doc_name}\n"
+        answer = answer.strip() + citation_md
+    
     return answer.strip()
 
