@@ -75,6 +75,10 @@ def upload_file_and_index(file: UploadFile, display_name: str | None = None) -> 
         # 표시 이름에는 한글 그대로 써도 괜찮음 (JSON/UTF-8)
         display_name = original_name
 
+    # upload_to_file_search_store returns a BatchUploadFileResponse or similar
+    # We need to inspect what it returns to get the file name.
+    # According to common SDK patterns, it might return an operation or the result directly.
+    # The previous code treated it as an operation (op.done).
     op = _client.file_search_stores.upload_to_file_search_store(
         file=stored_path,
         file_search_store_name=FILE_SEARCH_STORE_NAME,
@@ -86,6 +90,19 @@ def upload_file_and_index(file: UploadFile, display_name: str | None = None) -> 
         time.sleep(3)
         op = _client.operations.get(op)
 
+    # op.result might contain the file info?
+    # If op is an Operation, op.result should be the response.
+    # For upload_to_file_search_store, the response is likely UploadFileResponse.
+    # Let's try to extract the name.
+    google_file_name = None
+    # Fix: UploadToFileSearchStoreOperation has 'response', not 'result'.
+    # And the response has 'document_name' (mapped from documentName).
+    if hasattr(op, "response") and op.response and hasattr(op.response, "document_name"):
+         google_file_name = op.response.document_name
+    
+    # Fallback: if we can't get it easily, we might need to list files later or just rely on local deletion for now.
+    # But let's try to save it.
+
     # 3) 인덱스 기록 저장
     records = _load_index()
     now = datetime.utcnow().isoformat()
@@ -96,7 +113,65 @@ def upload_file_and_index(file: UploadFile, display_name: str | None = None) -> 
         "stored_path": stored_path,
         "display_name": display_name,
         "uploaded_at": now,
+        "google_file_name": google_file_name, # Google File Resource Name
     }
     _save_index(records + [record])
 
     return record
+
+
+def delete_file(file_id: str) -> bool:
+    """
+    파일 삭제 (로컬 + Google File Search Store)
+    """
+    records = _load_index()
+    target_record = None
+    new_records = []
+
+    for r in records:
+        if r.get("id") == file_id:
+            target_record = r
+        else:
+            new_records.append(r)
+
+    if not target_record:
+        return False
+
+    # 1. Cloud Deletion
+    target = target_record # Rename for clarity with new code
+    google_file_name = target.get("google_file_name")
+    
+    # Try to find google_file_name if missing (Legacy files)
+    if not google_file_name:
+        try:
+            print(f"Searching for legacy file in store: {target['display_name']}")
+            doc_pager = _client.file_search_stores.documents.list(parent=FILE_SEARCH_STORE_NAME)
+            for doc in doc_pager:
+                if doc.display_name == target["display_name"]:
+                    google_file_name = doc.name
+                    print(f"Found legacy file: {google_file_name}")
+                    break
+        except Exception as e:
+            print(f"Failed to search for legacy file: {e}")
+
+    if google_file_name:
+        try:
+            # Use documents.delete for files in store
+            _client.file_search_stores.documents.delete(name=google_file_name, config={'force': True})
+            print(f"Deleted cloud file: {google_file_name}")
+        except Exception as e:
+            print(f"Cloud delete failed: {e}")
+    else:
+        print("Skipping cloud deletion (resource name not found)")
+
+    # 2. Local Deletion
+    if os.path.exists(target["stored_path"]):
+        try:
+            os.remove(target["stored_path"])
+        except OSError:
+            pass
+
+    # 3. Index Update
+    new_records = [r for r in records if r["id"] != file_id]
+    _save_index(new_records)
+    return True

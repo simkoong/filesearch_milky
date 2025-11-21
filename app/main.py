@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .gemini_rag import ask_milky_rag
-from .file_store_admin import list_files, upload_file_and_index
+from .file_store_admin import list_files, upload_file_and_index, delete_file
 
 app = FastAPI(title="Milky - File Search with Gemini RAG")
 
@@ -43,6 +43,26 @@ async def api_admin_upload(
         return {"ok": True, "file": record}
     except Exception as e:
         # 실제 운영에서는 로깅 추천
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": str(e)},
+        )
+
+
+@app.delete("/api/admin/files/{file_id}")
+async def api_admin_delete_file(file_id: str):
+    """
+    파일 삭제
+    """
+    try:
+        success = delete_file(file_id)
+        if not success:
+            return JSONResponse(
+                status_code=404,
+                content={"ok": False, "error": "File not found"},
+            )
+        return {"ok": True}
+    except Exception as e:
         return JSONResponse(
             status_code=500,
             content={"ok": False, "error": str(e)},

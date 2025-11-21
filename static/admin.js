@@ -15,7 +15,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (!files.length) {
         fileTableBody.innerHTML = `
-          <tr><td colspan="3" class="small">아직 업로드된 파일이 없습니다.</td></tr>
+          <tr><td colspan="4" class="small">아직 업로드된 파일이 없습니다.</td></tr>
         `;
         return;
       }
@@ -27,13 +27,26 @@ document.addEventListener("DOMContentLoaded", () => {
           <td>${f.display_name || ""}</td>
           <td>${f.filename || ""}</td>
           <td class="small">${f.uploaded_at || ""}</td>
+          <td>
+            <button class="delete-btn" data-id="${f.id}" style="margin-top:0; background:#dc2626; padding:4px 8px; font-size:0.8rem;">삭제</button>
+          </td>
         `;
         fileTableBody.appendChild(tr);
+      });
+
+      // 삭제 버튼 이벤트 리스너 추가
+      document.querySelectorAll(".delete-btn").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+          const fileId = e.target.getAttribute("data-id");
+          if (confirm("정말 삭제하시겠습니까? (복구 불가)")) {
+            await deleteFile(fileId);
+          }
+        });
       });
     } catch (err) {
       console.error(err);
       fileTableBody.innerHTML = `
-        <tr><td colspan="3" class="small">파일 목록을 불러오는 중 오류가 발생했습니다.</td></tr>
+        <tr><td colspan="4" class="small">파일 목록을 불러오는 중 오류가 발생했습니다.</td></tr>
       `;
     }
   }
@@ -88,4 +101,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 처음 진입 시 파일 목록 로딩
   loadFiles();
+
+  async function deleteFile(fileId) {
+    try {
+      const res = await fetch(`/api/admin/files/${fileId}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.ok) {
+        alert("삭제 실패: " + (data.error || "알 수 없는 오류"));
+      } else {
+        alert("삭제되었습니다.");
+        await loadFiles();
+      }
+    } catch (err) {
+      console.error(err);
+      alert("삭제 요청 중 오류가 발생했습니다.");
+    }
+  }
 });
